@@ -17,6 +17,8 @@ check_for_update_on_startup = true
 suppress_unstable_features_warning = true
 
 # Legacy embedded profile representation intentionally retained for diagnostics.
+# Codex 0.134.0+ ignores these tables for --profile even though compatibility
+# fields can remain present in the generated config schema.
 [profiles.safe]
 approval_policy = "on-request"
 sandbox_mode = "read-only"
@@ -37,7 +39,8 @@ approval_policy = "never"
 sandbox_mode = "danger-full-access"
 model_reasoning_effort = "high"
 
-# Deliberately runtime-sensitive values for classification tests.
+# Runtime/model-capability probes. The current schema permits any non-empty
+# reasoning effort string; model support is a separate runtime question.
 [profiles.reasoning-max]
 model_reasoning_effort = "max"
 
