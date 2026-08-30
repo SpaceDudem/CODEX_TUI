@@ -45,6 +45,19 @@ def discover_profiles(home: Path | None = None) -> tuple[list[ProfileInfo], list
                 )
             )
             continue
+        if path.is_symlink():
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.WARNING,
+                    kind=DiagnosticKind.UNREACHABLE_PATH,
+                    message=(
+                        "Profile path is a symbolic link; CODEX_TUI does not validate or launch "
+                        "profile symlinks."
+                    ),
+                    source_path=path,
+                )
+            )
+            continue
         if not path.is_file():
             diagnostics.append(
                 Diagnostic(
