@@ -15,6 +15,10 @@ class UnsafePathError(WriteSafetyError):
     """A target violates the managed-write path policy."""
 
 
+class TargetLockError(WriteSafetyError):
+    """A managed target could not be locked within the configured timeout."""
+
+
 class StaleSourceError(WriteSafetyError):
     """The target changed after the caller prepared its expected hash."""
 
