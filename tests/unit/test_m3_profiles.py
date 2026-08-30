@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -9,7 +11,7 @@ from codex_tui.cli import app
 from codex_tui.models import DiagnosticKind
 from codex_tui.profiles.compare import compare_profile
 from codex_tui.profiles.discover import discover_profiles
-from codex_tui.profiles.launch import build_profile_argv
+from codex_tui.profiles.launch import build_profile_argv, launch_profile
 from codex_tui.profiles.migrate import plan_legacy_profile_migration
 from codex_tui.profiles.names import InvalidProfileNameError, validate_profile_name
 
@@ -40,6 +42,20 @@ def test_discovery_lists_valid_and_invalid_toml_profiles(tmp_path: Path) -> None
     assert by_name["work"].valid_toml is True
     assert by_name["broken"].valid_toml is False
     assert any(item.kind is DiagnosticKind.PROFILE_INVALID_NAME for item in diagnostics)
+
+
+def test_discovery_rejects_profile_symlink(tmp_path: Path) -> None:
+    external = tmp_path / "external.toml"
+    external.write_text('model = "outside"\n', encoding="utf-8")
+    (tmp_path / "work.config.toml").symlink_to(external)
+
+    profiles, diagnostics = discover_profiles(tmp_path)
+
+    assert profiles == []
+    assert any(
+        item.kind is DiagnosticKind.UNREACHABLE_PATH and "symbolic link" in item.message
+        for item in diagnostics
+    )
 
 
 def test_profile_diff_compares_base_to_effective_overlay(tmp_path: Path) -> None:
@@ -86,7 +102,7 @@ multi_agent = true # keep nested
     assert candidate.name == "safe"
     assert candidate.target_path == tmp_path / "safe.config.toml"
     assert "# preserve me" in candidate.content
-    assert '# keep inline' in candidate.content
+    assert "# keep inline" in candidate.content
     assert "[features]" in candidate.content
     assert "[profiles.safe" not in candidate.content
     assert "# keep nested" in candidate.content
@@ -123,6 +139,28 @@ def test_profile_launch_argv_is_plain_name_only(tmp_path: Path) -> None:
         build_profile_argv(binary, "../work")
 
 
+def test_launch_profile_propagates_selected_codex_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+    binary = tmp_path / "codex"
+    selected_home = tmp_path / "selected-home"
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        captured["argv"] = argv
+        captured.update(kwargs)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr("codex_tui.profiles.launch.subprocess.run", fake_run)
+    returncode = launch_profile(binary, "work", codex_home_path=selected_home)
+
+    assert returncode == 0
+    assert captured["argv"] == [str(binary), "--profile", "work"]
+    assert captured["env"]["CODEX_HOME"] == str(selected_home.absolute())
+    assert captured["shell"] is False
+
+
 def test_profiles_cli_list_and_plan_are_read_only(tmp_path: Path) -> None:
     base = tmp_path / "config.toml"
     original = """model = "gpt-base"
@@ -154,6 +192,26 @@ sandbox_mode = "read-only"
     assert "writes performed: 0" in planned.output
     assert base.read_text(encoding="utf-8") == original
     assert not (tmp_path / "safe.config.toml").exists()
+
+
+def test_profiles_cli_plan_fails_on_blocking_source_diagnostic(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.toml"
+
+    result = RUNNER.invoke(
+        app,
+        [
+            "profiles",
+            "plan-migration",
+            "--config",
+            str(missing),
+            "--no-validate-schema",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "BLOCKING" in result.output
+    assert "errors: 1" in result.output
+    assert "writes performed: 0" in result.output
 
 
 def test_profiles_cli_diff_redacts_sensitive_values(tmp_path: Path) -> None:
@@ -193,6 +251,7 @@ def test_profiles_cli_launch_dry_run_validates_discovered_profile(
     )
 
     assert result.exit_code == 0
+    assert f'CODEX_HOME="{tmp_path}"' in result.output
     assert str(fake_binary) in result.output
     assert '"--profile"' in result.output
     assert '"work"' in result.output
