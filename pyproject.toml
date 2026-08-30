@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codex-tui"
+version = "0.1.0"
+description = "Schema-driven CLI and TUI for inspecting, validating, diffing, profiling, and managing Codex configuration across versions."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "CODEX_TUI contributors" }]
+dependencies = [
+  "httpx>=0.27,<1",
+  "jsonschema>=4.23,<5",
+  "pydantic>=2.9,<3",
+  "tomlkit>=0.13,<1",
+  "typer>=0.15,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.13,<2",
+  "pytest>=8.3,<10",
+  "ruff>=0.8,<1",
+]
+tui = ["textual>=1.0,<2"]
+
+[project.scripts]
+codex-tui = "codex_tui.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["codex_tui"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
