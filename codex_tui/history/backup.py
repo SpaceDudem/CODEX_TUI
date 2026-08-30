@@ -5,6 +5,7 @@ import json
 import os
 import stat
 import uuid
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -142,14 +143,10 @@ def create_backup(
     except Exception:
         # Cleanup only artifacts created by this failed operation. Existing history is untouched.
         for path in (manifest_path, backup_path):
-            try:
+            with suppress(OSError):
                 path.unlink(missing_ok=True)
-            except OSError:
-                pass
-        try:
+        with suppress(OSError):
             record_dir.rmdir()
-        except OSError:
-            pass
         raise
 
 
