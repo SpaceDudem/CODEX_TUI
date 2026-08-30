@@ -44,7 +44,10 @@ def acquire_schema(
     owned_client = client is None
     http = client or httpx.Client(follow_redirects=True, timeout=timeout_seconds)
     try:
-        response = http.get(source_url, headers={"Accept": "application/schema+json, application/json"})
+        response = http.get(
+            source_url,
+            headers={"Accept": "application/schema+json, application/json"},
+        )
         response.raise_for_status()
         content = response.content
         _validate_json_object(content)
