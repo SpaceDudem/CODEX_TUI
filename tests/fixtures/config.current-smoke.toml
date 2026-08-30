@@ -1,0 +1,24 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+# Public-safe configuration expected to validate against the current Codex schema.
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+model_reasoning_summary = "detailed"
+model_verbosity = "high"
+personality = "pragmatic"
+approval_policy = "on-request"
+approvals_reviewer = "user"
+sandbox_mode = "workspace-write"
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 4
+
+[features]
+multi_agent = true
+runtime_metrics = true
+responses_websockets = true
+shell_snapshot = true
+
+[sandbox_workspace_write]
+network_access = true
