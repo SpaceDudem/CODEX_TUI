@@ -18,7 +18,6 @@ from codex_tui.history.backup import (
     list_manifest_paths,
     load_backup_manifest,
     sha256_bytes,
-    sha256_file,
     verify_backup_manifest,
 )
 from codex_tui.models import BackupOperation, LayerType
@@ -272,12 +271,12 @@ def apply_command(
         validator = _schema_bytes_validator(schema, layer_type=scope)
         validator(candidate_bytes, candidate)
         changes = _print_semantic_preview(target, candidate_bytes)
-    except (CodexTuiError, OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        typer.echo(f"ERROR apply: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
     except SchemaUnavailableError as exc:
         typer.echo(f"ERROR runtime: {exc}", err=True)
         raise typer.Exit(code=2) from exc
+    except (CodexTuiError, OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        typer.echo(f"ERROR apply: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
     if changes == 0:
         return
