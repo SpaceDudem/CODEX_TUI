@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
+from jsonschema.validators import validator_for
 
 from codex_tui.config.diagnostics import detect_legacy_profiles
 from codex_tui.models import Diagnostic, DiagnosticKind, Severity
@@ -12,6 +12,16 @@ from codex_tui.models import Diagnostic, DiagnosticKind, Severity
 
 def _format_json_path(parts: list[Any]) -> str:
     return ".".join(str(part) for part in parts)
+
+
+def _kind_for_validator(name: Any) -> DiagnosticKind:
+    if name == "type":
+        return DiagnosticKind.INVALID_TYPE
+    if name == "enum":
+        return DiagnosticKind.INVALID_ENUM
+    if name == "additionalProperties":
+        return DiagnosticKind.UNKNOWN_KEY
+    return DiagnosticKind.SCHEMA_MISMATCH
 
 
 def validate_config(
@@ -22,7 +32,9 @@ def validate_config(
     diagnostics = detect_legacy_profiles(config, source_path)
 
     try:
-        validator = Draft202012Validator(schema)
+        validator_class = validator_for(schema)
+        validator_class.check_schema(schema)
+        validator = validator_class(schema)
     except SchemaError as exc:
         diagnostics.append(
             Diagnostic(
@@ -39,7 +51,7 @@ def validate_config(
         diagnostics.append(
             Diagnostic(
                 severity=Severity.ERROR,
-                kind=DiagnosticKind.SCHEMA_MISMATCH,
+                kind=_kind_for_validator(error.validator),
                 message=error.message,
                 source_path=source_path,
                 key_path=key_path,
