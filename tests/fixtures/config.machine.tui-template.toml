@@ -1,0 +1,119 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+# Sanitized CODEX_TUI fixture derived from a real merged machine config.
+# It intentionally retains representative legacy/experimental patterns.
+
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+plan_mode_reasoning_effort = "high"
+model_reasoning_summary = "detailed"
+model_verbosity = "high"
+personality = "pragmatic"
+approval_policy = "never"
+approvals_reviewer = "user"
+sandbox_mode = "workspace-write"
+show_raw_agent_reasoning = true
+check_for_update_on_startup = true
+suppress_unstable_features_warning = true
+
+# Legacy embedded profile representation intentionally retained for diagnostics.
+# Codex 0.134.0+ ignores these tables for --profile even though compatibility
+# fields can remain present in the generated config schema.
+[profiles.safe]
+approval_policy = "on-request"
+sandbox_mode = "read-only"
+model_reasoning_effort = "high"
+
+[profiles.workspace]
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+model_reasoning_effort = "high"
+
+[profiles.autonomous]
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+model_reasoning_effort = "high"
+
+[profiles.full-access]
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+model_reasoning_effort = "high"
+
+# Runtime/model-capability probes. The current schema permits any non-empty
+# reasoning effort string; model support is a separate runtime question.
+[profiles.reasoning-max]
+model_reasoning_effort = "max"
+
+[profiles.reasoning-ultra]
+model_reasoning_effort = "ultra"
+
+[profiles.multi-agent-v2.features]
+multi_agent_v2 = { enabled = true, max_concurrent_threads_per_session = 4 }
+
+[features]
+unified_exec = true
+shell_snapshot = true
+steer = true
+undo = true
+sqlite = true
+apps = true
+runtime_metrics = true
+responses_websockets = true
+js_repl = true
+multi_agent = true
+prevent_idle_sleep = true
+terminal_resize_reflow = true
+
+[tools]
+view_image = true
+
+[history]
+persistence = "save-all"
+
+[tui]
+alternate_screen = "never"
+raw_output_mode = true
+status_line = [
+  "model-with-reasoning",
+  "context-remaining",
+  "current-dir",
+  "project-root",
+  "git-branch",
+  "context-used",
+  "codex-version",
+  "used-tokens",
+  "thread-id",
+]
+
+[mcp_servers.example-http]
+url = "http://127.0.0.1:6060/mcp"
+
+[mcp_servers.example-command]
+command = "/usr/bin/env"
+args = ["python3", "-m", "example_mcp"]
+
+[projects."/home/example/project-a"]
+trust_level = "trusted"
+
+[projects."/root/example/project-b"]
+trust_level = "trusted"
+
+[[skills.config]]
+path = "/home/example/.codex/skills/config-management/SKILL.md"
+enabled = true
+
+[[skills.config]]
+path = "/root/.codex/skills/security-review/SKILL.md"
+enabled = false
+
+[shell_environment_policy]
+ignore_default_excludes = false
+include_only = ["PATH", "HOME", "USER", "SHELL", "LANG", "LC_.*", "TERM"]
+
+[sandbox_workspace_write]
+network_access = true
+
+[otel]
+environment = "prod"
+log_user_prompt = false
+exporter = { "otlp-http" = { endpoint = "http://127.0.0.1:4318/v1/logs", protocol = "binary" } }
