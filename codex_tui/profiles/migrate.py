@@ -10,7 +10,7 @@ from tomlkit.items import Table
 from codex_tui.config.parser import load_config
 from codex_tui.models import Diagnostic, DiagnosticKind, Severity
 from codex_tui.profiles.models import LegacyProfileCandidate, ProfileMigrationPlan
-from codex_tui.profiles.names import InvalidProfileNameError, PROFILE_SUFFIX, validate_profile_name
+from codex_tui.profiles.names import PROFILE_SUFFIX, InvalidProfileNameError, validate_profile_name
 
 
 def _render_profile_table(table: Table) -> str:
