@@ -19,7 +19,10 @@ def _write(path: Path, text: str, mode: int = 0o600) -> bytes:
     return content
 
 
-def test_apply_uses_single_descriptor_safe_reads(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_apply_uses_single_descriptor_safe_reads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     target = tmp_path / "config.toml"
     before = _write(target, 'model = "gpt-a"\n')
 
@@ -40,15 +43,14 @@ def test_target_lock_blocks_competing_managed_writer(tmp_path: Path) -> None:
     target = tmp_path / "config.toml"
     before = _write(target, 'model = "gpt-a"\n')
 
-    with target_lock(target):
-        with pytest.raises(TargetLockError):
-            apply_candidate(
-                target,
-                b'model = "gpt-b"\n',
-                expected_source_sha256=sha256_bytes(before),
-                backup_root=tmp_path / "history",
-                lock_timeout_seconds=0.01,
-            )
+    with target_lock(target), pytest.raises(TargetLockError):
+        apply_candidate(
+            target,
+            b'model = "gpt-b"\n',
+            expected_source_sha256=sha256_bytes(before),
+            backup_root=tmp_path / "history",
+            lock_timeout_seconds=0.01,
+        )
 
     assert target.read_bytes() == before
 
