@@ -21,7 +21,7 @@ from codex_tui.history.backup import (
     verify_backup_manifest,
 )
 from codex_tui.models import BackupOperation, LayerType
-from codex_tui.paths import user_config_path
+from codex_tui.paths import backup_root_dir, user_config_path
 from codex_tui.schema.fetch import SchemaUnavailableError, acquire_schema
 from codex_tui.security import display_value
 
@@ -30,6 +30,10 @@ BytesValidator = Callable[[bytes, Path], None]
 
 def _target_path(config: Path | None) -> Path:
     return (config or user_config_path()).expanduser().absolute()
+
+
+def _trusted_backup_root(backup_root: Path | None) -> Path:
+    return (backup_root or backup_root_dir()).expanduser().absolute()
 
 
 def _read_regular_candidate(path: Path) -> bytes:
@@ -86,7 +90,8 @@ def _schema_bytes_validator(
         ]
         if errors:
             summary = "; ".join(
-                f"{item.kind.value}{f' [{item.key_path}]' if item.key_path else ''}: {item.message}"
+                f"{item.kind.value}{f' [{item.key_path}]' if item.key_path else ''}: "
+                f"{item.message}"
                 for item in errors[:8]
             )
             if len(errors) > 8:
@@ -133,13 +138,21 @@ def _print_semantic_preview(target: Path, candidate_bytes: bytes) -> int:
 
 def backup_command(
     config: Path | None = typer.Option(None, "--config", help="Config to snapshot."),
-    backup_root: Path | None = typer.Option(None, "--backup-root", help="Override backup root."),
+    backup_root: Path | None = typer.Option(
+        None,
+        "--backup-root",
+        help="Override backup root.",
+    ),
     expected_sha: str | None = typer.Option(
         None,
         "--expected-sha",
         help="Optional concurrency guard; backup fails if the source hash differs.",
     ),
-    checkpoint: str | None = typer.Option(None, "--checkpoint", help="Optional checkpoint name."),
+    checkpoint: str | None = typer.Option(
+        None,
+        "--checkpoint",
+        help="Optional checkpoint name.",
+    ),
 ) -> None:
     """Create an immutable byte-exact recovery snapshot."""
     target = _target_path(config)
@@ -164,14 +177,27 @@ def backup_command(
 
 
 def history_command(
-    backup_root: Path | None = typer.Option(None, "--backup-root", help="Override backup root."),
-    config: Path | None = typer.Option(None, "--config", help="Only show snapshots for this source."),
-    verify: bool = typer.Option(True, "--verify/--no-verify", help="Verify payload integrity."),
+    backup_root: Path | None = typer.Option(
+        None,
+        "--backup-root",
+        help="Override backup root.",
+    ),
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Only show snapshots for this source.",
+    ),
+    verify: bool = typer.Option(
+        True,
+        "--verify/--no-verify",
+        help="Verify payload integrity.",
+    ),
 ) -> None:
     """List recovery manifests without modifying them."""
     wanted = _target_path(config) if config is not None else None
+    trusted_root = _trusted_backup_root(backup_root)
     try:
-        paths = list_manifest_paths(backup_root=backup_root)
+        paths = list_manifest_paths(backup_root=trusted_root)
     except CodexTuiError as exc:
         typer.echo(f"ERROR history: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -180,7 +206,10 @@ def history_command(
     invalid = 0
     for path in paths:
         try:
-            manifest = verify_backup_manifest(path) if verify else load_backup_manifest(path)
+            if verify:
+                manifest = verify_backup_manifest(path, backup_root=trusted_root)
+            else:
+                manifest = load_backup_manifest(path, backup_root=trusted_root)
         except CodexTuiError as exc:
             invalid += 1
             typer.echo(f"INVALID {path}: {exc}")
@@ -210,13 +239,23 @@ def restore_command(
         "--expected-sha",
         help="Required SHA-256 of the target state reviewed before restore.",
     ),
-    backup_root: Path | None = typer.Option(None, "--backup-root", help="Override backup root."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Confirm the destructive replacement."),
+    backup_root: Path | None = typer.Option(
+        None,
+        "--backup-root",
+        help="Override backup root.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm the destructive replacement.",
+    ),
 ) -> None:
     """Restore a verified snapshot after protecting the current state."""
     target = _target_path(config)
+    trusted_root = _trusted_backup_root(backup_root)
     try:
-        historical = verify_backup_manifest(manifest)
+        historical = verify_backup_manifest(manifest, backup_root=trusted_root)
     except CodexTuiError as exc:
         typer.echo(f"ERROR restore: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -230,7 +269,7 @@ def restore_command(
             manifest,
             target,
             expected_target_sha256=expected_sha,
-            backup_root=backup_root,
+            backup_root=trusted_root,
         )
     except CodexTuiError as exc:
         typer.echo(f"ERROR restore: {exc}", err=True)
@@ -252,7 +291,7 @@ def apply_command(
     schema_file: Path | None = typer.Option(
         None,
         "--schema-file",
-        help="Pinned local Codex schema; otherwise use the immutable cached official schema.",
+        help="Pinned local Codex schema; otherwise use the cached official schema.",
     ),
     refresh_schema: bool = typer.Option(False, "--refresh-schema"),
     scope: LayerType | None = typer.Option(
@@ -260,8 +299,17 @@ def apply_command(
         "--scope",
         help="Optional target layer scope for scope-specific validation.",
     ),
-    backup_root: Path | None = typer.Option(None, "--backup-root", help="Override backup root."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Confirm the destructive replacement."),
+    backup_root: Path | None = typer.Option(
+        None,
+        "--backup-root",
+        help="Override backup root.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm the destructive replacement.",
+    ),
 ) -> None:
     """Validate, preview, back up, atomically apply, verify, and rollback on failure."""
     target = _target_path(config)
