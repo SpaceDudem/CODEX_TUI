@@ -42,10 +42,13 @@ def validate_config(
     if layer_type is LayerType.PROJECT:
         diagnostics.extend(detect_ignored_project_scope(config, source_path))
 
+    # jsonschema's typed API requires a concrete dict even though CODEX_TUI's
+    # read-only validator intentionally accepts any Mapping from callers.
+    schema_dict = dict(schema)
     try:
-        validator_class = validator_for(schema)
-        validator_class.check_schema(schema)
-        validator = validator_class(schema)
+        validator_class = validator_for(schema_dict)
+        validator_class.check_schema(schema_dict)
+        validator = validator_class(schema_dict)
     except SchemaError as exc:
         diagnostics.append(
             Diagnostic(
