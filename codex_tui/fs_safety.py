@@ -5,7 +5,7 @@ import os
 import stat
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 from codex_tui.errors import TargetLockError, UnsafePathError
@@ -41,7 +41,10 @@ def read_regular_file_nofollow(path: Path, *, role: str) -> tuple[bytes, os.stat
         current = os.fstat(fd)
         if not stat.S_ISREG(current.st_mode):
             raise UnsafePathError(f"Managed {role} is not a regular file: {target}")
-        if initial is not None and (initial.st_dev, initial.st_ino) != (current.st_dev, current.st_ino):
+        if initial is not None and (initial.st_dev, initial.st_ino) != (
+            current.st_dev,
+            current.st_ino,
+        ):
             raise UnsafePathError(f"Managed {role} changed identity while opening: {target}")
         with os.fdopen(fd, "rb", closefd=False) as handle:
             content = handle.read()
@@ -117,8 +120,6 @@ def target_lock(target: Path, *, timeout_seconds: float = 5.0) -> Iterator[Path]
 
         yield lock_path
     finally:
-        try:
+        with suppress(OSError):
             fcntl.flock(fd, fcntl.LOCK_UN)
-        except OSError:
-            pass
         os.close(fd)
