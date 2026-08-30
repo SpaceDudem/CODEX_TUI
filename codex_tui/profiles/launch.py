@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -15,13 +16,23 @@ def build_profile_argv(binary: Path, name: str) -> list[str]:
     return [str(binary), "--profile", name]
 
 
-def launch_profile(binary: Path, name: str, *, cwd: Path | None = None) -> int:
-    """Launch interactive Codex with a selected profile and inherited terminal I/O."""
+def launch_profile(
+    binary: Path,
+    name: str,
+    *,
+    cwd: Path | None = None,
+    codex_home_path: Path | None = None,
+) -> int:
+    """Launch interactive Codex with the validated profile root and inherited terminal I/O."""
     argv = build_profile_argv(binary, name)
+    environment = os.environ.copy()
+    if codex_home_path is not None:
+        environment["CODEX_HOME"] = str(codex_home_path.expanduser().absolute())
     try:
         completed = subprocess.run(
             argv,
             cwd=cwd,
+            env=environment,
             check=False,
             shell=False,
         )
