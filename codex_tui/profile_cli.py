@@ -14,7 +14,7 @@ from codex_tui.profiles.compare import ProfileComparisonError, compare_profile
 from codex_tui.profiles.discover import discover_profiles
 from codex_tui.profiles.launch import ProfileLaunchError, build_profile_argv, launch_profile
 from codex_tui.profiles.migrate import plan_legacy_profile_migration
-from codex_tui.profiles.names import InvalidProfileNameError, PROFILE_SUFFIX, validate_profile_name
+from codex_tui.profiles.names import PROFILE_SUFFIX, InvalidProfileNameError, validate_profile_name
 from codex_tui.schema.fetch import SchemaUnavailableError, acquire_schema
 from codex_tui.security import display_validation_message, display_value
 
@@ -29,7 +29,10 @@ def _print_diagnostic(diagnostic: Diagnostic) -> None:
     key = f" [{diagnostic.key_path}]" if diagnostic.key_path else ""
     source = f" {diagnostic.source_path}" if diagnostic.source_path else ""
     message = display_validation_message(diagnostic.key_path, diagnostic.message)
-    typer.echo(f"{diagnostic.severity.value.upper()} {diagnostic.kind.value}{key}{source}: {message}")
+    typer.echo(
+        f"{diagnostic.severity.value.upper()} {diagnostic.kind.value}"
+        f"{key}{source}: {message}"
+    )
 
 
 def _schema(schema_file: Path | None) -> dict[str, Any]:
