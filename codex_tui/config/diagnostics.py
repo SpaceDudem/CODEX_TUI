@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from codex_tui.codex.version import codex_version_at_least
 from codex_tui.models import Diagnostic, DiagnosticKind, Severity
