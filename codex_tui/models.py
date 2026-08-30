@@ -189,3 +189,13 @@ class WriteResult(BaseModel):
     final_sha256: str
     rolled_back: bool = False
     rollback_verified: bool = False
+
+
+class CreateResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    operation_id: str
+    target_path: Path
+    candidate_sha256: str
+    final_sha256: str
+    mode: int
