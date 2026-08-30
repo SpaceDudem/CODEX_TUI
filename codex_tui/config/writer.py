@@ -5,6 +5,7 @@ import stat
 import tempfile
 import uuid
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 
 import tomlkit
@@ -68,10 +69,8 @@ def _fsync_directory(directory: Path) -> None:
     except OSError:
         return
     try:
-        try:
+        with suppress(OSError):
             os.fsync(fd)
-        except OSError:
-            pass
     finally:
         os.close(fd)
 
