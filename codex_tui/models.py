@@ -26,6 +26,8 @@ class DiagnosticKind(StrEnum):
     IGNORED_SCOPE = "ignored_scope"
     CONFLICTING_ALIAS = "conflicting_alias"
     PROFILE_LEGACY = "profile_legacy"
+    PROFILE_INVALID_NAME = "profile_invalid_name"
+    PROFILE_COLLISION = "profile_collision"
     RUNTIME_MISMATCH = "runtime_mismatch"
     SCHEMA_MISMATCH = "schema_mismatch"
     MISSING_DEPENDENCY = "missing_dependency"
