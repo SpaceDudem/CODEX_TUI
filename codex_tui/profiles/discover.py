@@ -38,8 +38,8 @@ def discover_profiles(home: Path | None = None) -> tuple[list[ProfileInfo], list
                     severity=Severity.WARNING,
                     kind=DiagnosticKind.PROFILE_INVALID_NAME,
                     message=(
-                        "Profile-like filename is not selectable by Codex; profile names allow only "
-                        "ASCII letters, digits, '_' and '-'."
+                        "Profile-like filename is not selectable by Codex; "
+                        "profile names allow only ASCII letters, digits, '_' and '-'."
                     ),
                     source_path=path,
                 )
