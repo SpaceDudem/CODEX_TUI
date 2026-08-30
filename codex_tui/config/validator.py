@@ -6,8 +6,9 @@ from typing import Any, Mapping
 from jsonschema.exceptions import SchemaError
 from jsonschema.validators import validator_for
 
-from codex_tui.config.diagnostics import detect_legacy_profiles
-from codex_tui.models import Diagnostic, DiagnosticKind, Severity
+from codex_tui.config.diagnostics import detect_ignored_project_scope, detect_legacy_profiles
+from codex_tui.models import Diagnostic, DiagnosticKind, LayerType, Severity
+from codex_tui.security import display_validation_message
 
 
 def _format_json_path(parts: list[Any]) -> str:
@@ -17,7 +18,7 @@ def _format_json_path(parts: list[Any]) -> str:
 def _kind_for_validator(name: Any) -> DiagnosticKind:
     if name == "type":
         return DiagnosticKind.INVALID_TYPE
-    if name == "enum":
+    if name in {"enum", "const"}:
         return DiagnosticKind.INVALID_ENUM
     if name == "additionalProperties":
         return DiagnosticKind.UNKNOWN_KEY
@@ -28,8 +29,17 @@ def validate_config(
     config: Mapping[str, Any],
     schema: Mapping[str, Any],
     source_path: Path,
+    *,
+    codex_version: str | None = None,
+    layer_type: LayerType | None = None,
 ) -> list[Diagnostic]:
-    diagnostics = detect_legacy_profiles(config, source_path)
+    diagnostics = detect_legacy_profiles(
+        config,
+        source_path,
+        codex_version=codex_version,
+    )
+    if layer_type is LayerType.PROJECT:
+        diagnostics.extend(detect_ignored_project_scope(config, source_path))
 
     try:
         validator_class = validator_for(schema)
@@ -52,7 +62,7 @@ def validate_config(
             Diagnostic(
                 severity=Severity.ERROR,
                 kind=_kind_for_validator(error.validator),
-                message=error.message,
+                message=display_validation_message(key_path, error.message),
                 source_path=source_path,
                 key_path=key_path,
             )
