@@ -24,6 +24,8 @@ profiles_app = typer.Typer(
     help="Discover, compare, migrate, and launch Codex profile-v2 configurations.",
 )
 
+_FAILURE_SEVERITIES = {Severity.ERROR, Severity.BLOCKING}
+
 
 def _print_diagnostic(diagnostic: Diagnostic) -> None:
     key = f" [{diagnostic.key_path}]" if diagnostic.key_path else ""
@@ -129,12 +131,12 @@ def plan_migration(
             typer.echo(f"ERROR schema: {exc}", err=True)
             raise typer.Exit(code=2) from exc
 
-    errors = sum(1 for item in plan.diagnostics if item.severity is Severity.ERROR)
+    errors = sum(1 for item in plan.diagnostics if item.severity in _FAILURE_SEVERITIES)
     for candidate in plan.candidates:
         typer.echo(f"{candidate.name} -> {candidate.target_path}")
         for diagnostic in candidate.diagnostics:
             _print_diagnostic(diagnostic)
-            if diagnostic.severity is Severity.ERROR:
+            if diagnostic.severity in _FAILURE_SEVERITIES:
                 errors += 1
 
         if schema is not None:
@@ -144,7 +146,7 @@ def plan_migration(
             diagnostics = validate_config(mapping, schema, candidate.target_path)
             for diagnostic in diagnostics:
                 _print_diagnostic(diagnostic)
-                if diagnostic.severity.value in {"error", "blocking"}:
+                if diagnostic.severity in _FAILURE_SEVERITIES:
                     errors += 1
 
     typer.echo(
@@ -189,11 +191,12 @@ def launch(
         raise typer.Exit(code=2) from exc
 
     if dry_run:
+        typer.echo(f"CODEX_HOME={json.dumps(str(root))}")
         typer.echo("argv: " + " ".join(json.dumps(part) for part in argv))
         return
 
     try:
-        returncode = launch_profile(binary, name, cwd=cwd)
+        returncode = launch_profile(binary, name, cwd=cwd, codex_home_path=root)
     except ProfileLaunchError as exc:
         typer.echo(f"ERROR profile launch: {exc}", err=True)
         raise typer.Exit(code=2) from exc
