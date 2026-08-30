@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -8,18 +9,32 @@ import typer
 
 from codex_tui.codex.binary import CodexBinaryNotFoundError, discover_codex_binary
 from codex_tui.codex.version import CodexVersionError, get_codex_version
+from codex_tui.config.diagnostics import detect_ignored_project_scope, detect_legacy_profiles
 from codex_tui.config.diff import semantic_diff
+from codex_tui.config.effective import compute_effective_values
 from codex_tui.config.layers import discover_user_layers
 from codex_tui.config.parser import ParsedConfig, load_config
 from codex_tui.config.validator import validate_config
-from codex_tui.paths import codex_home, user_config_path
+from codex_tui.models import ConfigLayer, Diagnostic, LayerType
+from codex_tui.paths import codex_home
 from codex_tui.schema.catalog import build_catalog
 from codex_tui.schema.fetch import SchemaUnavailableError, acquire_schema
+from codex_tui.security import display_validation_message, display_value
 
 app = typer.Typer(
     name="codex-tui",
     no_args_is_help=True,
     help="Read-only Codex configuration inspector for M1.",
+)
+
+_DEFAULT_EFFECTIVE_KEYS = (
+    "model",
+    "model_reasoning_effort",
+    "model_reasoning_summary",
+    "model_verbosity",
+    "approval_policy",
+    "approvals_reviewer",
+    "sandbox_mode",
 )
 
 
@@ -33,55 +48,140 @@ def _parsed_mapping(parsed: ParsedConfig) -> dict[str, Any]:
     return dict(parsed.document.unwrap())
 
 
-def _print_diagnostics(parsed: ParsedConfig) -> None:
-    for diagnostic in parsed.diagnostics:
+def _print_diagnostics(diagnostics: Iterable[Diagnostic]) -> None:
+    for diagnostic in diagnostics:
         where = str(diagnostic.source_path) if diagnostic.source_path else "<unknown>"
         location = ""
         if diagnostic.line is not None:
             location = f":{diagnostic.line}"
             if diagnostic.column is not None:
                 location += f":{diagnostic.column}"
+        key = f" [{diagnostic.key_path}]" if diagnostic.key_path else ""
+        message = display_validation_message(diagnostic.key_path, diagnostic.message)
         typer.echo(
-            f"{diagnostic.severity.value.upper()} {diagnostic.kind.value} "
-            f"{where}{location}: {diagnostic.message}"
+            f"{diagnostic.severity.value.upper()} {diagnostic.kind.value}{key} "
+            f"{where}{location}: {message}"
         )
+
+
+def _installed_codex_version() -> tuple[Path | None, str | None, str | None]:
+    try:
+        binary = discover_codex_binary()
+    except CodexBinaryNotFoundError as exc:
+        return None, None, str(exc)
+    try:
+        return binary, get_codex_version(binary), None
+    except CodexVersionError as exc:
+        return binary, None, str(exc)
+
+
+def _explicit_layers(config: Path, profile: str | None) -> list[ConfigLayer]:
+    target = config.expanduser()
+    layers = [
+        ConfigLayer(
+            layer_id="explicit",
+            layer_type=LayerType.USER,
+            path=target,
+            precedence=100,
+            writable=False,
+        )
+    ]
+    if profile:
+        profile_path = target.parent / f"{profile}.config.toml"
+        if profile_path.exists():
+            layers.append(
+                ConfigLayer(
+                    layer_id=f"profile:{profile}",
+                    layer_type=LayerType.USER_PROFILE,
+                    path=profile_path,
+                    precedence=200,
+                    writable=False,
+                    profile_name=profile,
+                )
+            )
+    return layers
 
 
 @app.command()
 def inspect(
     config: Path | None = typer.Option(None, "--config", help="Config path to inspect."),
     profile: str | None = typer.Option(None, "--profile", help="Named profile to include."),
+    working_directory: Path | None = typer.Option(
+        None, "--cwd", help="Working directory used for project-layer discovery."
+    ),
+    effective_key: list[str] = typer.Option(
+        [], "--effective", "-e", help="Effective key to display; repeat for multiple keys."
+    ),
+    all_effective: bool = typer.Option(
+        False, "--all-effective", help="Display every effective leaf value with provenance."
+    ),
 ) -> None:
-    """Inspect Codex, CODEX_HOME, config layers, and basic diagnostics."""
-    target = config.expanduser() if config else user_config_path()
+    """Inspect Codex, config layers, diagnostics, and effective-value provenance."""
     typer.echo(f"CODEX_HOME: {codex_home()}")
-    typer.echo(f"Config: {target}")
 
-    try:
-        binary = discover_codex_binary()
+    binary, version, version_error = _installed_codex_version()
+    if binary is None:
+        typer.echo(f"Codex binary: unavailable ({version_error})")
+    else:
         typer.echo(f"Codex binary: {binary}")
-        try:
-            typer.echo(f"Codex version: {get_codex_version(binary)}")
-        except CodexVersionError as exc:
-            typer.echo(f"Codex version: unavailable ({exc})")
-    except CodexBinaryNotFoundError as exc:
-        typer.echo(f"Codex binary: unavailable ({exc})")
+        if version is None:
+            typer.echo(f"Codex version: unavailable ({version_error})")
+        else:
+            typer.echo(f"Codex version: {version}")
 
-    layers = discover_user_layers(profile=profile)
+    layers = (
+        _explicit_layers(config, profile)
+        if config is not None
+        else discover_user_layers(working_directory=working_directory, profile=profile)
+    )
     typer.echo(f"Discovered layers: {len(layers)}")
     for layer in layers:
         typer.echo(f"  {layer.precedence:03d} {layer.layer_type.value}: {layer.path}")
 
-    parsed = load_config(target)
-    if not parsed.valid_toml:
-        _print_diagnostics(parsed)
-        raise typer.Exit(code=1)
+    layer_documents: list[tuple[ConfigLayer, dict[str, Any]]] = []
+    invalid = False
+    for layer in layers:
+        parsed = load_config(layer.path)
+        if not parsed.valid_toml:
+            _print_diagnostics(parsed.diagnostics)
+            invalid = True
+            continue
+        mapping = _parsed_mapping(parsed)
+        layer_documents.append((layer, mapping))
+        diagnostics = detect_legacy_profiles(mapping, parsed.path, codex_version=version)
+        if layer.layer_type is LayerType.PROJECT:
+            diagnostics.extend(detect_ignored_project_scope(mapping, parsed.path))
+        _print_diagnostics(diagnostics)
 
-    config_map = _parsed_mapping(parsed)
-    profiles = config_map.get("profiles")
-    legacy_count = len(profiles) if isinstance(profiles, dict) else 0
-    typer.echo("TOML: valid")
-    typer.echo(f"Legacy profile tables: {legacy_count}")
+    if invalid:
+        raise typer.Exit(code=1)
+    if not layer_documents:
+        typer.echo("No readable config layers discovered.")
+        return
+
+    effective = compute_effective_values(layer_documents)
+    if all_effective:
+        keys = sorted(effective)
+    elif effective_key:
+        keys = effective_key
+    else:
+        keys = [key for key in _DEFAULT_EFFECTIVE_KEYS if key in effective]
+
+    typer.echo("Effective values:")
+    for key in keys:
+        current = effective.get(key)
+        if current is None:
+            typer.echo(f"  {key}: <unset>")
+            continue
+        typer.echo(
+            f"  {key} = {display_value(key, current.value)} "
+            f"<- {current.winning_layer} ({current.winning_path})"
+        )
+        for overridden in current.overridden_values:
+            typer.echo(
+                f"    overrides {display_value(key, overridden.value)} "
+                f"from {overridden.layer_id} ({overridden.source_path})"
+            )
 
 
 @app.command()
@@ -91,11 +191,16 @@ def validate(
         None, "--schema-file", help="Pinned local schema; skips network acquisition."
     ),
     refresh_schema: bool = typer.Option(False, "--refresh-schema"),
+    scope: LayerType | None = typer.Option(
+        None,
+        "--scope",
+        help="Optional config layer scope for scope-specific diagnostics (for example project).",
+    ),
 ) -> None:
     """Validate a Codex config against a pinned or cached official schema."""
     parsed = load_config(config)
     if not parsed.valid_toml:
-        _print_diagnostics(parsed)
+        _print_diagnostics(parsed.diagnostics)
         raise typer.Exit(code=1)
 
     try:
@@ -114,13 +219,15 @@ def validate(
         typer.echo(f"ERROR runtime: {exc}", err=True)
         raise typer.Exit(code=2) from exc
 
-    diagnostics = validate_config(_parsed_mapping(parsed), schema, parsed.path)
-    for diagnostic in diagnostics:
-        key = f" [{diagnostic.key_path}]" if diagnostic.key_path else ""
-        typer.echo(
-            f"{diagnostic.severity.value.upper()} {diagnostic.kind.value}{key}: "
-            f"{diagnostic.message}"
-        )
+    _, codex_version, _ = _installed_codex_version()
+    diagnostics = validate_config(
+        _parsed_mapping(parsed),
+        schema,
+        parsed.path,
+        codex_version=codex_version,
+        layer_type=scope,
+    )
+    _print_diagnostics(diagnostics)
 
     errors = [item for item in diagnostics if item.severity.value in {"error", "blocking"}]
     typer.echo(f"Diagnostics: {len(diagnostics)} total, {len(errors)} error/blocking")
@@ -163,7 +270,10 @@ def catalog(
     for item in items:
         enum = f" enum={item.allowed_values}" if item.allowed_values else ""
         default = f" default={item.default_value!r}" if item.default_value is not None else ""
-        typer.echo(f"{item.key_path} type={item.value_type or 'unknown'}{enum}{default}")
+        maturity = f" maturity={item.maturity}" if item.maturity != "stable" else ""
+        typer.echo(
+            f"{item.key_path} type={item.value_type or 'unknown'}{enum}{default}{maturity}"
+        )
     typer.echo(f"Catalog entries: {len(items)}")
 
 
@@ -178,7 +288,7 @@ def diff_command(
     invalid = False
     for parsed in (left, right):
         if not parsed.valid_toml:
-            _print_diagnostics(parsed)
+            _print_diagnostics(parsed.diagnostics)
             invalid = True
     if invalid:
         raise typer.Exit(code=1)
@@ -194,12 +304,14 @@ def diff_command(
         return
 
     for change in result.changes:
+        before = display_value(change.key_path, change.before)
+        after = display_value(change.key_path, change.after)
         if change.kind.value == "added":
-            typer.echo(f"+ {change.key_path} = {change.after!r}")
+            typer.echo(f"+ {change.key_path} = {after}")
         elif change.kind.value == "removed":
-            typer.echo(f"- {change.key_path} = {change.before!r}")
+            typer.echo(f"- {change.key_path} = {before}")
         else:
-            typer.echo(f"~ {change.key_path}: {change.before!r} -> {change.after!r}")
+            typer.echo(f"~ {change.key_path}: {before} -> {after}")
     typer.echo(f"Semantic changes: {len(result.changes)}")
 
 
