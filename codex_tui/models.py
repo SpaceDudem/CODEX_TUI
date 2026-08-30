@@ -68,6 +68,27 @@ class ConfigLayer(BaseModel):
     source_version: str | None = None
 
 
+class OverriddenValue(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    value: Any
+    layer_id: str
+    source_path: Path
+
+
+class EffectiveValue(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    key_path: str
+    value: Any
+    winning_layer: str
+    winning_path: Path
+    overridden_values: list[OverriddenValue] = Field(default_factory=list)
+    validation_state: str = "unknown"
+    catalog_state: str = "unknown"
+    write_scope_state: str = "unknown"
+
+
 class SettingDefinition(BaseModel):
     model_config = ConfigDict(frozen=True)
 
