@@ -5,9 +5,10 @@ import httpx
 
 from codex_tui.config.diagnostics import detect_legacy_profiles
 from codex_tui.config.diff import semantic_diff
+from codex_tui.config.effective import compute_effective_values
 from codex_tui.config.parser import load_config
 from codex_tui.config.validator import validate_config
-from codex_tui.models import DiagnosticKind, Severity
+from codex_tui.models import ConfigLayer, DiagnosticKind, LayerType, Severity
 from codex_tui.paths import codex_home, xdg_cache_home, xdg_data_home
 from codex_tui.schema.catalog import build_catalog
 from codex_tui.schema.fetch import acquire_schema
@@ -62,6 +63,34 @@ def test_semantic_diff_detects_nested_change() -> None:
     )
     assert len(result.changes) == 1
     assert result.changes[0].key_path == "features.multi_agent"
+
+
+def test_effective_value_tracks_provenance_and_override_chain() -> None:
+    base = ConfigLayer(
+        layer_id="user",
+        layer_type=LayerType.USER,
+        path=Path("user.toml"),
+        precedence=100,
+    )
+    profile = ConfigLayer(
+        layer_id="profile:work",
+        layer_type=LayerType.USER_PROFILE,
+        path=Path("work.config.toml"),
+        precedence=200,
+    )
+    result = compute_effective_values(
+        [
+            (base, {"model": "gpt-a", "features": {"multi_agent": False}}),
+            (profile, {"model": "gpt-b"}),
+        ]
+    )
+    model = result["model"]
+    assert model.value == "gpt-b"
+    assert model.winning_layer == "profile:work"
+    assert model.winning_path == Path("work.config.toml")
+    assert len(model.overridden_values) == 1
+    assert model.overridden_values[0].value == "gpt-a"
+    assert result["features.multi_agent"].value is False
 
 
 def test_catalog_extracts_types_enums_defaults() -> None:
@@ -129,3 +158,4 @@ def test_validator_reports_schema_error_and_legacy_profile() -> None:
     )
     assert any(item.kind is DiagnosticKind.PROFILE_LEGACY for item in diagnostics)
     assert any(item.severity is Severity.ERROR for item in diagnostics)
+    assert any(item.kind is DiagnosticKind.INVALID_ENUM for item in diagnostics)
