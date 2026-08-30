@@ -52,6 +52,14 @@ mypy codex_tui
 
 GitHub Actions runs these checks on Python 3.11 and 3.12 and performs a current official Codex schema smoke test.
 
+## Milestones
+
+- **M1 — Read-only engine:** complete; see `docs/M1-CHECKPOINT.md`.
+- **M2 — Backup/write/rollback:** next; no live apply command ships until byte-exact recovery tests pass.
+- **M3 — Profiles:** profile-v2 migration and launch workflows.
+- **M4 — Introspection/history:** capability probes and versioned catalog history.
+- **M5 — Textual TUI:** presentation layer over the same backend.
+
 ## License
 
 Apache-2.0
