@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -149,3 +150,40 @@ class SchemaSnapshot(BaseModel):
     source_url: str
     acquired_at: str
     size_bytes: int
+
+
+class BackupOperation(StrEnum):
+    MANUAL = "manual-backup"
+    PRE_WRITE = "pre-write"
+    PRE_RESTORE = "pre-restore"
+
+
+class BackupManifest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    manifest_version: int = 1
+    operation_id: str
+    operation: BackupOperation
+    created_at: datetime
+    source_path: Path
+    backup_path: Path
+    source_sha256: str
+    backup_sha256: str
+    source_size_bytes: int
+    source_mode: int
+    schema_sha256: str | None = None
+    checkpoint_name: str | None = None
+    rollback_of: str | None = None
+
+
+class WriteResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    operation_id: str
+    target_path: Path
+    backup_manifest_path: Path
+    before_sha256: str
+    candidate_sha256: str
+    final_sha256: str
+    rolled_back: bool = False
+    rollback_verified: bool = False
