@@ -16,6 +16,12 @@ from codex_tui.config.layers import discover_user_layers
 from codex_tui.config.parser import ParsedConfig, load_config
 from codex_tui.config.validator import validate_config
 from codex_tui.models import ConfigLayer, Diagnostic, LayerType
+from codex_tui.mutation_cli import (
+    apply_command,
+    backup_command,
+    history_command,
+    restore_command,
+)
 from codex_tui.paths import codex_home
 from codex_tui.schema.catalog import build_catalog
 from codex_tui.schema.fetch import SchemaUnavailableError, acquire_schema
@@ -24,7 +30,7 @@ from codex_tui.security import display_validation_message, display_value
 app = typer.Typer(
     name="codex-tui",
     no_args_is_help=True,
-    help="Read-only Codex configuration inspector for M1.",
+    help="Schema-driven Codex configuration inspector and safety-first manager.",
 )
 
 _DEFAULT_EFFECTIVE_KEYS = (
@@ -313,6 +319,12 @@ def diff_command(
         else:
             typer.echo(f"~ {change.key_path}: {before} -> {after}")
     typer.echo(f"Semantic changes: {len(result.changes)}")
+
+
+app.command("backup")(backup_command)
+app.command("history")(history_command)
+app.command("restore")(restore_command)
+app.command("apply")(apply_command)
 
 
 def main() -> None:
