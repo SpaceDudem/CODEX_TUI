@@ -71,7 +71,8 @@ def _assert_manifest_under_root(path: Path, backup_root: Path | None) -> None:
         raise BackupIntegrityError(f"Unable to resolve backup history path: {exc}") from exc
     if not resolved_manifest.is_relative_to(resolved_root):
         raise BackupIntegrityError(
-            f"Backup manifest is outside the trusted backup root {resolved_root}: {resolved_manifest}"
+            "Backup manifest is outside the trusted backup root "
+            f"{resolved_root}: {resolved_manifest}"
         )
 
 
