@@ -47,3 +47,7 @@ def app_cache_dir(env: dict[str, str] | None = None) -> Path:
 
 def schema_snapshot_dir(env: dict[str, str] | None = None) -> Path:
     return app_data_dir(env) / "schemas"
+
+
+def backup_root_dir(env: dict[str, str] | None = None) -> Path:
+    return app_data_dir(env) / "backups"
