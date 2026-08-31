@@ -23,6 +23,7 @@ from codex_tui.mutation_cli import (
     restore_command,
 )
 from codex_tui.paths import codex_home
+from codex_tui.profile_cli import profiles_app
 from codex_tui.schema.catalog import build_catalog
 from codex_tui.schema.fetch import SchemaUnavailableError, acquire_schema
 from codex_tui.security import display_validation_message, display_value
@@ -325,6 +326,7 @@ app.command("backup")(backup_command)
 app.command("history")(history_command)
 app.command("restore")(restore_command)
 app.command("apply")(apply_command)
+app.add_typer(profiles_app, name="profiles")
 
 
 def main() -> None:

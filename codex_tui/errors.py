@@ -19,6 +19,10 @@ class TargetLockError(WriteSafetyError):
     """A managed target could not be locked within the configured timeout."""
 
 
+class TargetExistsError(WriteSafetyError):
+    """A create-only managed operation found an existing destination."""
+
+
 class StaleSourceError(WriteSafetyError):
     """The target changed after the caller prepared its expected hash."""
 
@@ -33,6 +37,10 @@ class CandidateValidationError(WriteSafetyError):
 
 class PostWriteVerificationError(WriteSafetyError):
     """The replaced target did not verify as the intended candidate."""
+
+
+class CreateRollbackError(WriteSafetyError):
+    """A newly linked target could not be safely removed after create verification failed."""
 
 
 class RollbackError(WriteSafetyError):

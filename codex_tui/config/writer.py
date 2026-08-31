@@ -12,15 +12,17 @@ from tomlkit.exceptions import ParseError
 
 from codex_tui.errors import (
     CandidateValidationError,
+    CreateRollbackError,
     PostWriteVerificationError,
     RollbackError,
     StaleSourceError,
+    TargetExistsError,
     UnsafePathError,
     WriteRolledBackError,
 )
 from codex_tui.fs_safety import fsync_directory, read_regular_file_nofollow, target_lock
 from codex_tui.history.backup import create_backup, read_verified_backup, sha256_bytes
-from codex_tui.models import BackupOperation, WriteResult
+from codex_tui.models import BackupOperation, CreateResult, WriteResult
 from codex_tui.paths import backup_root_dir
 
 BytesValidator = Callable[[bytes, Path], None]
@@ -74,6 +76,146 @@ def _atomic_replace_raw(target: Path, content: bytes, *, mode: int) -> None:
         fsync_directory(target.parent)
     finally:
         temp_path.unlink(missing_ok=True)
+
+
+def _assert_create_parent(parent: Path) -> None:
+    try:
+        metadata = parent.lstat()
+    except OSError as exc:
+        raise UnsafePathError(f"Unable to inspect create destination directory {parent}: {exc}") from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise UnsafePathError(f"Create destination parent is not a real directory: {parent}")
+
+
+def _assert_target_absent(target: Path) -> None:
+    try:
+        target.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise UnsafePathError(f"Unable to inspect create-only target {target}: {exc}") from exc
+    raise TargetExistsError(f"Create-only target already exists: {target}")
+
+
+def _remove_created_target_if_same(
+    target: Path,
+    *,
+    expected_identity: tuple[int, int],
+) -> None:
+    try:
+        metadata = target.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise CreateRollbackError(f"Unable to inspect newly created target: {exc}") from exc
+
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise CreateRollbackError(
+            "Newly created target changed type before create rollback; refusing to unlink it"
+        )
+    observed_identity = (metadata.st_dev, metadata.st_ino)
+    if observed_identity != expected_identity:
+        raise CreateRollbackError(
+            "Newly created target changed identity before create rollback; refusing to unlink it"
+        )
+
+    try:
+        target.unlink()
+        fsync_directory(target.parent)
+    except OSError as exc:
+        raise CreateRollbackError(f"Unable to remove failed create target: {exc}") from exc
+
+    try:
+        target.lstat()
+    except FileNotFoundError:
+        return
+    raise CreateRollbackError("Create rollback could not verify target removal")
+
+
+def create_candidate(
+    target_path: Path,
+    candidate_bytes: bytes,
+    *,
+    candidate_validator: BytesValidator = validate_toml_bytes,
+    post_create_validator: PathValidator | None = None,
+    mode: int = 0o600,
+    lock_timeout_seconds: float = 5.0,
+) -> CreateResult:
+    """Create a new config atomically without ever overwriting an existing target."""
+
+    target = target_path.expanduser().absolute()
+    if mode < 0 or mode & ~0o777:
+        raise UnsafePathError(f"Refusing unsafe create mode: {oct(mode)}")
+    if mode & 0o077:
+        raise UnsafePathError(
+            f"Create-only config mode must not permit group/world access: {oct(mode)}"
+        )
+
+    with target_lock(target, timeout_seconds=lock_timeout_seconds):
+        _assert_create_parent(target.parent)
+        _assert_target_absent(target)
+        candidate_validator(candidate_bytes, target)
+        candidate_sha = sha256_bytes(candidate_bytes)
+
+        temp_path = _write_temp_file(target.parent, target.name, candidate_bytes, mode)
+        linked = False
+        temp_identity: tuple[int, int] | None = None
+        try:
+            temp_bytes, temp_stat = read_regular_file_nofollow(
+                temp_path,
+                role="create candidate temporary file",
+            )
+            temp_identity = (temp_stat.st_dev, temp_stat.st_ino)
+            if sha256_bytes(temp_bytes) != candidate_sha or temp_bytes != candidate_bytes:
+                raise CandidateValidationError("Temporary create candidate bytes changed before link")
+            if stat.S_IMODE(temp_stat.st_mode) != mode:
+                raise CandidateValidationError("Temporary create candidate mode changed before link")
+            candidate_validator(temp_bytes, temp_path)
+
+            _assert_target_absent(target)
+            try:
+                os.link(temp_path, target, follow_symlinks=False)
+            except FileExistsError as exc:
+                raise TargetExistsError(f"Create-only target appeared before link: {target}") from exc
+            linked = True
+            fsync_directory(target.parent)
+
+            final_bytes, final_stat = _read_target_snapshot(target)
+            final_identity = (final_stat.st_dev, final_stat.st_ino)
+            if final_identity != temp_identity:
+                raise PostWriteVerificationError(
+                    "Create-only target identity does not match the prepared candidate"
+                )
+            final_sha = sha256_bytes(final_bytes)
+            if final_sha != candidate_sha or final_bytes != candidate_bytes:
+                raise PostWriteVerificationError("Create-only target bytes failed exact verification")
+            if stat.S_IMODE(final_stat.st_mode) != mode:
+                raise PostWriteVerificationError("Create-only target mode failed verification")
+            candidate_validator(final_bytes, target)
+            if post_create_validator is not None:
+                post_create_validator(target)
+
+            temp_path.unlink()
+            fsync_directory(target.parent)
+            return CreateResult(
+                operation_id=uuid.uuid4().hex,
+                target_path=target,
+                candidate_sha256=candidate_sha,
+                final_sha256=final_sha,
+                mode=mode,
+            )
+        except Exception as exc:
+            if linked and temp_identity is not None:
+                try:
+                    _remove_created_target_if_same(target, expected_identity=temp_identity)
+                except CreateRollbackError as rollback_exc:
+                    raise CreateRollbackError(
+                        f"Create failed and rollback could not safely remove the new target: "
+                        f"{rollback_exc}"
+                    ) from exc
+            raise
+        finally:
+            temp_path.unlink(missing_ok=True)
 
 
 def _apply_candidate_locked(

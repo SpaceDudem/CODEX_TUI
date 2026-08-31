@@ -48,6 +48,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # Typer's public API intentionally uses Option()/Argument() objects as defaults.
 "codex_tui/cli.py" = ["B008"]
 "codex_tui/mutation_cli.py" = ["B008"]
+"codex_tui/profile_cli.py" = ["B008"]
 
 [tool.mypy]
 python_version = "3.11"

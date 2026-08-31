@@ -26,6 +26,8 @@ class DiagnosticKind(StrEnum):
     IGNORED_SCOPE = "ignored_scope"
     CONFLICTING_ALIAS = "conflicting_alias"
     PROFILE_LEGACY = "profile_legacy"
+    PROFILE_INVALID_NAME = "profile_invalid_name"
+    PROFILE_COLLISION = "profile_collision"
     RUNTIME_MISMATCH = "runtime_mismatch"
     SCHEMA_MISMATCH = "schema_mismatch"
     MISSING_DEPENDENCY = "missing_dependency"
@@ -187,3 +189,13 @@ class WriteResult(BaseModel):
     final_sha256: str
     rolled_back: bool = False
     rollback_verified: bool = False
+
+
+class CreateResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    operation_id: str
+    target_path: Path
+    candidate_sha256: str
+    final_sha256: str
+    mode: int
